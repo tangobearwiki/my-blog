@@ -70,7 +70,7 @@ const post = posts[slug];
   </div>
 
   <script>
-    const API_BASE = 'https://my-blog-api.ostwaltamy.workers.dev';
+    const API_BASE = '';
     const slug = window.location.pathname.split('/').pop();
 
     function escapeHtml(text) {
@@ -128,7 +128,7 @@ const post = posts[slug];
         const data = await res.json();
 
         if (data.success) {
-          status.textContent = '评论提交成功，待审核后显示';
+          status.textContent = '评论提交成功！';
           status.style.color = '#4caf50';
           document.getElementById('author').value = '';
           document.getElementById('content').value = '';
