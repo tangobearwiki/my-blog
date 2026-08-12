@@ -19,8 +19,17 @@ export async function onRequest(context) {
   if (method === 'OPTIONS') return new Response(null, { headers: { ...CORS } });
 
   try {
-    // 自动建表
-    await initDB(env.DB);
+    // 后台管理 - 登录不需要数据库
+    if (path === '/api/admin/login' && method === 'POST') {
+      const { username, password } = await request.json();
+      if (username === ADMIN_USER && password === ADMIN_PASS) return json({ success: true, token: btoa(ADMIN_USER + ':' + ADMIN_PASS) });
+      return json({ error: '密码错误' }, 401);
+    }
+
+    // 自动建表（需要 D1 绑定）
+    if (env.DB) {
+      await initDB(env.DB);
+    }
 
     // 公开接口
     if (path === '/api/comments' && method === 'GET') {
