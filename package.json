@@ -1,7 +1,8 @@
 {
   "name": "my-blog",
   "version": "1.0.0",
-  "private": true,
+  "private": true, 
+  "description": "熊的窝 - 无服务器博客 with Functions",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
