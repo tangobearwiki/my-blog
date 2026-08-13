@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>后台管理 - 熊的窝</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">🐻 熊的窝</a>
+    <div class="nav-links">
+      <a href="/">首页</a>
+      <a href="/admin.html" style="color:var(--accent)">管理</a>
+    </div>
+  </nav>
+
+  <main id="app"></main>
+
+  <footer>
+    <p>© <span id="year"></span> 熊的窝 · Powered by Cloudflare Workers + D1</p>
+  </footer>
+
+  <script>
+  const API = 'https://my-blog-api.ostwaltamy.workers.dev';
+  let token = localStorage.getItem('bt') || '';
+
+  async function api(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...(opts.headers || {}) }
+    });
+    return await res.json();
+  }
+
+  function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+  async function render() {
+    if (!token) { showLogin(); return; }
+    try {
+      const d = await api('/api/admin/stats');
+      if (d.error) { showLogin(); return; }
+      showAdmin(d.stats || {});
+    } catch(e) { showLogin(); }
+  }
+
+  function showLogin() {
+    document.getElementById('app').innerHTML = `
+      <div class="login-box">
+        <h1>🔐 博客后台管理</h1>
+        <input id="luser" placeholder="用户名">
+        <input id="lpass" type="password" placeholder="密码">
+        <button onclick="login()">登录</button>
+        <p id="lmsg" style="color:var(--accent)"></p>
+      </div>`;
+  }
+
+  async function login() {
+    const username = document.getElementById('luser').value;
+    const password = document.getElementById('lpass').value;
+    const d = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({username, password}) });
+    if (d.success) {
+      token = d.token; localStorage.setItem('bt', token);
+      render();
+    } else {
+      document.getElementById('lmsg').textContent = d.error || '登录失败';
+    }
+  }
+
+  function showAdmin(stats) {
+    document.getElementById('app').innerHTML = `
+      <div class="admin-header">
+        <h1>📊 博客后台</h1>
+        <button class="btn-outline" onclick="localStorage.removeItem('bt');token='';render()">退出</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="num">${stats.totalViews||0}</div><div class="label">总浏览</div></div>
+        <div class="stat-card"><div class="num">${stats.todayViews||0}</div><div class="label">今日</div></div>
+        <div class="stat-card"><div class="num">${stats.totalPosts||0}</div><div class="label">文章</div></div>
+        <div class="stat-card"><div class="num">${stats.totalComments||0}</div><div class="label">评论</div></div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('posts')">📝 文章</button>
+        <button class="tab" onclick="showTab('newpost')">✏️ 写文章</button>
+        <button class="tab" onclick="showTab('comments')">💬 评论</button>
+        <button class="tab" onclick="showTab('theme')">🎨 主题</button>
+      </div>
+      <div id="tab-content"></div>`;
+    showTab('posts');
+  }
+
+  let currentTab = '';
+
+  async function showTab(name) {
+    currentTab = name;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.tab:nth-child(${['posts','newpost','comments','theme'].indexOf(name)+1})`)?.classList.add('active');
+    const tc = document.getElementById('tab-content');
+    if (name === 'posts') {
+      const d = await api('/api/admin/posts').catch(()=>({posts:[]}));
+      const ps = d.posts || [];
+      tc.innerHTML = '<h3>文章列表</h3>' + (ps.length ? ps.map(p =>
+        '<div class="list-item"><div><strong>' + escapeHtml(p.title) + '</strong><span class="meta">' + p.slug + '</span></div>' +
+        '<button class="btn-danger" onclick="deletePost(' + p.id + ')">删除</button></div>'
+      ).join('') : '<p class="muted">暂无文章</p>');
+    } else if (name === 'newpost') {
+      tc.innerHTML = `
+        <h3>发布文章</h3>
+        <div class="form-group">
+          <input id="ptitle" placeholder="文章标题 *">
+          <input id="pslug" placeholder="slug (如 my-post) *">
+          <textarea id="pexcerpt" placeholder="摘要（可选）" rows="2"></textarea>
+          <textarea id="pcontent" placeholder="文章内容（支持 HTML）*" rows="12"></textarea>
+          <button onclick="createPost()">发布</button>
+          <p id="pmsg"></p>
+        </div>`;
+    } else if (name === 'comments') {
+      const d = await api('/api/admin/comments').catch(()=>({comments:[]}));
+      const cs = d.comments || [];
+      tc.innerHTML = '<h3>评论管理</h3>' + (cs.length ? cs.map(c =>
+        '<div class="list-item"><div><strong>' + escapeHtml(c.author) + '</strong><span class="meta">on ' + c.post_slug + ' · ' + (c.created_at || '').slice(0,10) + '</span><p>' + escapeHtml(c.content) + '</p></div>' +
+        '<button class="btn-danger" onclick="deleteComment(' + c.id + ')">删除</button></div>'
+      ).join('') : '<p class="muted">暂无评论</p>');
+    } else if (name === 'theme') {
+      const d = await api('/api/settings').catch(()=>({settings:{}}));
+      const s = d.settings || {};
+      tc.innerHTML = `
+        <h3>主题设置</h3>
+        <div class="form-group">
+          <label>主色调</label><input id="tcolor" type="color" value="${s.theme_primary_color||'#e94560'}">
+          <label>背景色</label><input id="tbg" type="color" value="${s.theme_bg_color||'#fafafa'}">
+          <label>站点标题</label><input id="ttitle" value="${escapeHtml(s.blog_title||'熊的窝')}">
+          <label>站点副标题</label><input id="tsub" value="${escapeHtml(s.blog_subtitle||'')}">
+          <button onclick="saveTheme()">保存</button>
+          <p id="tmsg"></p>
+        </div>`;
+    }
+  }
+
+  async function createPost() {
+    const title = document.getElementById('ptitle').value.trim();
+    const slug = document.getElementById('pslug').value.trim();
+    const content = document.getElementById('pcontent').value.trim();
+    const excerpt = document.getElementById('pexcerpt').value.trim();
+    const msg = document.getElementById('pmsg');
+    if (!title || !slug || !content) { msg.textContent = '请填写标题、slug和内容'; return; }
+    const d = await api('/api/admin/posts', { method: 'POST', body: JSON.stringify({title,slug,content,excerpt}) });
+    if (d.success) {
+      msg.textContent = '✅ 发布成功！'; msg.style.color = '#4caf50';
+      document.getElementById('ptitle').value = '';
+      document.getElementById('pslug').value = '';
+      document.getElementById('pcontent').value = '';
+      document.getElementById('pexcerpt').value = '';
+    } else { msg.textContent = d.error || '发布失败'; msg.style.color = 'var(--accent)'; }
+  }
+
+  async function deletePost(id) {
+    if (!confirm('确定删除？')) return;
+    await api('/api/admin/posts/' + id, { method: 'DELETE' });
+    showTab('posts');
+  }
+
+  async function deleteComment(id) {
+    if (!confirm('确定删除？')) return;
+    await api('/api/admin/comments/' + id, { method: 'DELETE' });
+    showTab('comments');
+  }
+
+  async function saveTheme() {
+    const d = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify({
+      theme_primary_color: document.getElementById('tcolor').value,
+      theme_bg_color: document.getElementById('tbg').value,
+      blog_title: document.getElementById('ttitle').value,
+      blog_subtitle: document.getElementById('tsub').value,
+    })});
+    const msg = document.getElementById('tmsg');
+    if (d.success) {
+      msg.textContent = '✅ 保存成功！'; msg.style.color = '#4caf50';
+      document.documentElement.style.setProperty('--accent', document.getElementById('tcolor').value);
+      document.documentElement.style.setProperty('--bg', document.getElementById('tbg').value);
+    } else { msg.textContent = d.error || '保存失败'; msg.style.color = 'var(--accent)'; }
+  }
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+  render();
+  </script>
+</body>
+</html>

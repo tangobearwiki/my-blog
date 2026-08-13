@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文章 - 熊的窝</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">🐻 熊的窝</a>
+    <div class="nav-links">
+      <a href="/">首页</a>
+      <a href="/admin.html">管理</a>
+    </div>
+  </nav>
+
+  <main id="app">
+    <div id="loading">加载中...</div>
+  </main>
+
+  <footer>
+    <p>© <span id="year"></span> 熊的窝 · Powered by Cloudflare Workers + D1</p>
+  </footer>
+
+  <script>
+  const API = 'https://my-blog-api.ostwaltamy.workers.dev';
+  const app = document.getElementById('app');
+  const slug = new URLSearchParams(location.search).get('slug');
+
+  async function loadPost() {
+    if (!slug) { app.innerHTML = '<p>缺少文章 slug</p>'; return; }
+    app.innerHTML = '<div id="loading">加载中...</div>';
+
+    try {
+      const res = await fetch(API + '/api/posts/' + slug);
+      const data = await res.json();
+      if (!data.post) { app.innerHTML = '<p>文章不存在</p>'; return; }
+      const p = data.post;
+
+      document.title = p.title + ' - 熊的窝';
+      fetch(API + '/api/pageview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({path: '/posts/' + slug}) }).catch(()=>{});
+
+      let html = '<article class="post-full"><h1>' + escapeHtml(p.title) + '</h1>';
+      html += '<div class="meta">' + (p.created_at || '').slice(0,10) + '</div><hr>';
+      html += '<div class="content">' + p.content + '</div></article>';
+      html += '<hr><h2>💬 评论</h2><div id="comments"></div>';
+      html += '<form id="comment-form"><h3>发表评论</h3><input id="cauthor" placeholder="你的名字 *" required>';
+      html += '<input id="cemail" placeholder="邮箱（可选）"><textarea id="ccontent" placeholder="说点什么..." required rows="4"></textarea>';
+      html += '<button type="submit">提交评论</button><p id="cmsg"></p></form>';
+      app.innerHTML = html;
+
+      loadComments();
+      document.getElementById('comment-form').addEventListener('submit', submitComment);
+    } catch(e) {
+      app.innerHTML = '<p style="color:var(--accent)">加载失败: ' + e.message + '</p>';
+    }
+  }
+
+  async function loadComments() {
+    try {
+      const res = await fetch(API + '/api/comments?slug=' + slug);
+      const data = await res.json();
+      const list = document.getElementById('comments');
+      if (!data.comments || !data.comments.length) {
+        list.innerHTML = '<p style="color:var(--muted)">还没有评论</p>';
+        return;
+      }
+      list.innerHTML = data.comments.map(c =>
+        '<div class="comment"><strong>' + escapeHtml(c.author) + '</strong> <span class="meta">' + new Date(c.created_at).toLocaleDateString('zh-CN') + '</span><p>' + escapeHtml(c.content) + '</p></div>'
+      ).join('');
+    } catch(e) { document.getElementById('comments').innerHTML = '<p>评论加载失败</p>'; }
+  }
+
+  async function submitComment(e) {
+    e.preventDefault();
+    const msg = document.getElementById('cmsg');
+    const author = document.getElementById('cauthor').value.trim();
+    const content = document.getElementById('ccontent').value.trim();
+    const email = document.getElementById('cemail').value.trim();
+    if (!author || !content) { msg.textContent = '请填写名字和评论内容'; return; }
+    msg.textContent = '提交中...';
+    try {
+      const res = await fetch(API + '/api/comments', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({slug, author, content, email: email || undefined})
+      });
+      const data = await res.json();
+      if (data.success) {
+        msg.textContent = '评论成功！'; msg.style.color = '#4caf50';
+        document.getElementById('cauthor').value = '';
+        document.getElementById('ccontent').value = '';
+        document.getElementById('cemail').value = '';
+        loadComments();
+      } else { msg.textContent = data.error || '失败'; msg.style.color = 'var(--accent)'; }
+    } catch(e) { msg.textContent = '网络错误'; msg.style.color = 'var(--accent)'; }
+  }
+
+  function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+  document.getElementById('year').textContent = new Date().getFullYear();
+  loadPost();
+  </script>
+</body>
+</html>
