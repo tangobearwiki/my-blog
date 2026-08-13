@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>后台管理 - 熊的窝</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+.tab { padding: .6rem 1.2rem; border: 1px solid var(--border); background: var(--card); border-radius: 8px; cursor: pointer; font-size: .95rem; }
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+.card .n { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+.card .l { font-size: .8rem; color: var(--muted); }
+.item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: .75rem; display: flex; justify-content: space-between; align-items: center; }
+.btn-sm { padding: .4rem .8rem; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+.btn-danger { background: #e94560; color: #fff; }
+.input { padding: .75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; width: 100%; }
+label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
+</style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="logo">🐻 熊的窝</a>
+    <div class="nav-links">
+      <a href="/">首页</a>
+      <a href="/admin">后台</a>
+    </div>
+  </nav>
+
+  <main>
+    <div id="login-view" style="max-width:400px;margin:4rem auto;text-align:center">
+      <h1>🔐 博客后台管理</h1>
+      <div style="display:flex;flex-direction:column;gap:1rem;margin-top:2rem">
+        <input id="l-user" class="input" placeholder="用户名">
+        <input id="l-pass" type="password" class="input" placeholder="密码">
+        <button class="btn" onclick="login()">登录</button>
+        <p id="l-msg" style="color:var(--accent)"></p>
+      </div>
+    </div>
+
+    <div id="admin-view" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem">
+        <h1>📊 博客后台</h1>
+        <button class="btn-sm" style="background:#666;color:#fff" onclick="logout()">退出</button>
+      </div>
+
+      <div id="stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1rem;margin-bottom:2rem"></div>
+
+      <div style="display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <button class="tab active" onclick="showTab('posts')">📝 文章</button>
+        <button class="tab" onclick="showTab('newpost')">✏️ 写文章</button>
+        <button class="tab" onclick="showTab('comments')">💬 评论</button>
+        <button class="tab" onclick="showTab('theme')">🎨 主题</button>
+        <button class="tab" onclick="showTab('stats')">📈 统计</button>
+      </div>
+
+      <div id="tab-posts" class="tc"><div id="posts-list"></div></div>
+
+      <div id="tab-newpost" class="tc" style="display:none">
+        <div style="display:flex;flex-direction:column;gap:1rem;max-width:600px">
+          <input id="p-title" class="input" placeholder="文章标题 *">
+          <input id="p-slug" class="input" placeholder="slug（如 my-first-post）*">
+          <textarea id="p-excerpt" class="input" placeholder="摘要（可选）" rows="2"></textarea>
+          <textarea id="p-content" class="input" placeholder="文章内容（支持 HTML）*" rows="12" style="font-family:monospace"></textarea>
+          <button class="btn" onclick="createPost()" style="align-self:flex-start">发布文章</button>
+          <p id="p-msg" style="color:var(--accent)"></p>
+        </div>
+      </div>
+
+      <div id="tab-comments" class="tc" style="display:none"><div id="comments-list"></div></div>
+
+      <div id="tab-theme" class="tc" style="display:none">
+        <div style="display:flex;flex-direction:column;gap:1rem;max-width:400px">
+          <div><label>主色调</label><input id="t-color" type="color" style="width:100%;height:40px;border:none;border-radius:8px"></div>
+          <div><label>背景色</label><input id="t-bg" type="color" style="width:100%;height:40px;border:none;border-radius:8px"></div>
+          <div><label>站点标题</label><input id="t-title" class="input"></div>
+          <div><label>站点副标题</label><input id="t-sub" class="input"></div>
+          <button class="btn" onclick="saveTheme()">保存主题</button>
+          <p id="t-msg" style="color:var(--accent)"></p>
+        </div>
+      </div>
+
+      <div id="tab-stats" class="tc" style="display:none"><div id="stats-detail"></div></div>
+    </div>
+  </main>
+
+  <script>
+    const API = '';
+    let token = localStorage.getItem('bt') || '';
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, { ...opts, headers: { ...opts.headers, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } });
+      return res.json();
+    }
+
+    async function login() {
+      const u = document.getElementById('l-user').value, p = document.getElementById('l-pass').value;
+      const d = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username: u, password: p }) });
+      if (d.success) {
+        token = d.token; localStorage.setItem('bt', token);
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('admin-view').style.display = 'block';
+        loadAll();
+      } else {
+        document.getElementById('l-msg').textContent = d.error || '登录失败';
+      }
+    }
+
+    function logout() { token = ''; localStorage.removeItem('bt'); location.reload(); }
+
+    async function loadAll() {
+      if (!token) return;
+      loadStats(); loadPosts(); loadComments(); loadTheme();
+    }
+
+    async function loadStats() {
+      const d = await api('/api/admin/stats');
+      if (!d.stats) return;
+      const s = d.stats;
+      document.getElementById('stats-row').innerHTML = [
+        { n: s.totalViews, l: '总浏览' }, { n: s.todayViews, l: '今日' },
+        { n: s.totalPosts, l: '文章' }, { n: s.totalComments, l: '评论' }
+      ].map(c => '<div class="card"><div class="n">' + c.n + '</div><div class="l">' + c.l + '</div></div>').join('');
+    }
+
+    async function loadPosts() {
+      const d = await api('/api/admin/posts').catch(() => ({ posts: [] }));
+      const ps = d.posts || [];
+      document.getElementById('posts-list').innerHTML = ps.length
+        ? ps.map(p => '<div class="item"><div><strong>' + p.title + '</strong><div style="color:var(--muted);font-size:.8rem">' + p.slug + '</div></div><button class="btn-sm btn-danger" onclick="deletePost(' + p.id + ')">删除</button></div>').join('')
+        : '<p style="color:var(--muted)">还没有文章</p>';
+    }
+
+    async function createPost() {
+      const title = document.getElementById('p-title').value.trim();
+      const slug = document.getElementById('p-slug').value.trim();
+      const content = document.getElementById('p-content').value.trim();
+      const excerpt = document.getElementById('p-excerpt').value.trim();
+      const msg = document.getElementById('p-msg');
+      if (!title || !slug || !content) { msg.textContent = '标题、slug、内容必填'; return; }
+      const d = await api('/api/admin/posts', { method: 'POST', body: JSON.stringify({ title, slug, content, excerpt }) });
+      if (d.success) {
+        msg.textContent = '发布成功！'; msg.style.color = '#4caf50';
+        document.getElementById('p-title').value = ''; document.getElementById('p-slug').value = '';
+        document.getElementById('p-content').value = ''; document.getElementById('p-excerpt').value = '';
+        loadPosts(); loadStats();
+      } else { msg.textContent = d.error || '发布失败'; }
+    }
+
+    async function deletePost(id) {
+      if (!confirm('确定删除？')) return;
+      await api('/api/admin/posts/' + id, { method: 'DELETE' });
+      loadPosts(); loadStats();
+    }
+
+    async function loadComments() {
+      const d = await api('/api/admin/comments').catch(() => ({ comments: [] }));
+      const cs = d.comments || [];
+      document.getElementById('comments-list').innerHTML = cs.length
+        ? cs.map(c => '<div class="item"><div><strong>' + c.author + '</strong><div style="color:var(--muted);font-size:.8rem">on ' + c.post_slug + ' · ' + (c.created_at||'').slice(0,10) + '</div><p>' + c.content + '</p></div><button class="btn-sm btn-danger" onclick="deleteComment(' + c.id + ')">删除</button></div>').join('')
+        : '<p style="color:var(--muted)">还没有评论</p>';
+    }
+
+    async function deleteComment(id) {
+      if (!confirm('确定删除？')) return;
+      await api('/api/admin/comments/' + id, { method: 'DELETE' });
+      loadComments(); loadStats();
+    }
+
+    async function loadTheme() {
+      const d = await api('/api/settings').catch(() => ({}));
+      document.getElementById('t-color').value = d.theme_color || '#e94560';
+      document.getElementById('t-bg').value = d.theme_bg || '#fafafa';
+      document.getElementById('t-title').value = d.blog_title || '熊的窝';
+      document.getElementById('t-sub').value = d.blog_subtitle || '';
+    }
+
+    async function saveTheme() {
+      const d = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify({
+        theme_color: document.getElementById('t-color').value,
+        theme_bg: document.getElementById('t-bg').value,
+        blog_title: document.getElementById('t-title').value,
+        blog_subtitle: document.getElementById('t-sub').value,
+      })});
+      document.getElementById('t-msg').textContent = d.success ? '✅ 已保存' : '保存失败';
+      document.getElementById('t-msg').style.color = d.success ? '#4caf50' : 'var(--accent)';
+    }
+
+    function showTab(name) {
+      document.querySelectorAll('.tc').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).style.display = 'block';
+      event.target.classList.add('active');
+      if (name === 'posts') loadPosts();
+      if (name === 'comments') loadComments();
+      if (name === 'theme') loadTheme();
+    }
+
+    // 自动登录
+    if (token) { login(); }
+  </script>
+</body>
+</html>
